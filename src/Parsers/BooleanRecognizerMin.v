@@ -350,6 +350,29 @@ Section recursive_descent_parser.
                   simpl @list_rect;
                   [ subst N0 N1; simpl; intros
                   | intros; unfold C0 at 1, C1 at 1; simpl ])
+            | [ |- bool_of_sum (list_rect ?P ?N ?C ?ls ?a ?b ?c ?d ?e) = list_rect ?P' ?N' ?C' ?ls ?b ?c ?e ]
+              => (let P0 := fresh in
+                  let N0 := fresh in
+                  let C0 := fresh in
+                  let P1 := fresh in
+                  let N1 := fresh in
+                  let C1 := fresh in
+                  set (P0 := P);
+                  set (P1 := P');
+                  set (N0 := N);
+                  set (N1 := N');
+                  set (C0 := C);
+                  set (C1 := C');
+                  refine (list_rect
+                            (fun ls' => forall a' b' c' d' e' e'',
+                                          bool_of_sum (list_rect P0 N0 C0 ls' a' b' c' d' e')
+                                          = list_rect P1 N1 C1 ls' b' c' e'')
+                            _
+                            _
+                            ls a b c d e e);
+                  simpl @list_rect;
+                  [ subst N0 N1; simpl; intros
+                  | intros; unfold C0 at 1, C1 at 1; simpl ])
             end).
 
       Local Ltac eq_list_rect_fold_left_orb :=

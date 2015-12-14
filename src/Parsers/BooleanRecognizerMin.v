@@ -43,6 +43,17 @@ Local Ltac subst_nat_eq_proof :=
       => assert (H = H') by apply UIP_nat; subst
   end.
 
+Local Ltac subst_valid_proof :=
+  idtac;
+  match goal with
+    | [ H : item_valid ?it, H' : item_valid ?it |- _ ]
+      => assert (H = H') by apply item_valid_proof_irrelevance; subst
+    | [ H : production_valid ?it, H' : production_valid ?it |- _ ]
+      => assert (H = H') by apply production_valid_proof_irrelevance; subst
+    | [ H : productions_valid ?it, H' : productions_valid ?it |- _ ]
+      => assert (H = H') by apply productions_valid_proof_irrelevance; subst
+  end.
+
 Section recursive_descent_parser.
   Context {Char} {HSL : StringLike Char} {HSLP : StringLikeProperties Char} (G : grammar Char).
   Context {data : @boolean_parser_dataT Char _}
@@ -225,10 +236,19 @@ Section recursive_descent_parser.
                unfold y'
         end.
       Local Ltac expand_once := try expand_onceL; try expand_onceR.
+      Local Ltac expand_both_once :=
+        idtac;
+        match goal with
+          | [ |- ?x = ?y ]
+            => let x' := head x in
+               let y' := head y in
+               try unfold x'; try unfold y'
+        end.
 
       Local Ltac eq_t' :=
         first [ progress subst_le_proof
               | progress subst_nat_eq_proof
+              | progress subst_valid_proof
               | idtac;
                 match goal with
                   | [ |- ?x = ?x ] => reflexivity
@@ -461,19 +481,18 @@ Section recursive_descent_parser.
                   : forall nt : nonterminal_carrierT,
                       is_valid_nonterminal initial_nonterminals_data nt
                       -> dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt)))
+                 (ext : forall nt pf,
+                          str_matches_nonterminal nt pf = str_matches_nonterminal' nt pf)
                 (it : item Char)
                 (Hvalid Hvalid' : item_valid it)
       : parse_item' str_matches_nonterminal it Hvalid
         = parse_item' str_matches_nonterminal' it Hvalid'.
       Proof.
-        match goal with
-          | [ |- ?x = ?y ]
-            => let x' := head x in
-               let y' := head y in
-               try unfold x'; try unfold y'
-        end.
-Print item_valid.
-
+        expand_both_once; subst_valid_proof; destruct it; try reflexivity; [].
+        rewrite ext.
+        clear ext str_matches_nonterminal.
+        reflexivity.
+      Qed.
 
       Section production.
         Context {len0 valid}
@@ -481,26 +500,6 @@ Print item_valid.
                  : forall (str : String) (len : nat) (Hlen : length str = len) (pf : len <= len0) (nt : nonterminal_carrierT),
                      is_valid_nonterminal initial_nonterminals_data nt
                      -> dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt))).
-
-        (*Definition parse_production'_for_helper
-                 (splits : item Char -> production Char -> String -> list nat)
-                 (str : String)
-                 (len : nat)
-                 (Hlen : length str = len)
-                 (pf : len <= len0)
-                 (it : item Char)
-                 (its : production Char)
-        : dec { n : nat & (minimal_parse_of_item (G := G) len0 valid (take n str) it
-                           * minimal_parse_of_production (G := G) len0 valid (drop n str) its) }.
-        Proof.
-
-
-          pose parse_item'.
-          Focus 2.
-          simpl in *.
-
-
-*)
 
         Lemma dec_in_helper {ls it its str}
         : iffT {n0 : nat &
@@ -1120,58 +1119,116 @@ Print item_valid.
             = (BooleanRecognizer.parse_nonterminal_or_abort (G := G) p valid str pf nt)
                 :> bool.
           Proof.
-            eq_t.
+            expand_once.
+            revert valid Hvalid_len str len Hlen pf nt Hvalid.
             match goal with
               | [ |- appcontext[Fix ?Wf _ _ ?p] ]
-                => induction (Wf p)
+                => induction (Wf p) as [?? IH]; intros
             end.
             symmetry;
               rewrite Fix5_eq
               by (intros; apply parse_nonterminal_step_ext; eauto with nocore);
               symmetry.
-            rewrite Fix8_eq.
-            Focus 2.
-            intros.
-            unfold parse_nonterminal_step.
+            destruct_head prod.
+            erewrite <- parse_nonterminal_step_eq by apply IH.
             match goal with
-              | [ |- appcontext[sumbool_rect _ _ _ ?sb] ]
-                => destruct sb; simpl
+              | [ |- bool_of_sum ?x = bool_of_sum ?y ]
+                => destruct x, y; try reflexivity; exfalso; eauto with nocore
             end.
-            erewrite <- parse_nonterminal_step_eq.
-            2:eauto with nocore.
-            unfold BooleanRecognizer.parse_nonterminal_or_abort.
-            revert Hvalid_len Hlen.
-            apply Fix5_rect; [ | intros; apply parse_nonterminal_step_ext; assumption ].
-            clear valid str nt pf len p.
-            intros p IH valid str len pf nt Hvalid_len Hlen.
-            erewrite <- parse_nonterminal_step_eq.
-            { match goal with
-                | [ |- bool_of_sum ?L = bool_of_sum ?R ]
-                  => generalize R; generalize L
-              end.
-              clear; intros [?|?] [?|?];
-              solve [ reflexivity
-                    | exfalso; eauto with nocore ]. }
-            { intros.
-              eapply IH;
-              assumption. }
             Grab Existential Variables.
-            { assumption. }
-            { assumption. }
-            { assumption. }
-            { assumption. }
+            assumption.
+            assumption.
+            assumption.
+            assumption.
+          Qed.
+
+          Definition parse_nonterminal'
+                     (str : String)
+                     (nt : nonterminal_carrierT)
+          : dec (minimal_parse_of_nonterminal (G := G) (length str) initial_nonterminals_data str (to_nonterminal nt)).
+          Proof.
+            destruct (Utils.dec (is_valid_nonterminal initial_nonterminals_data nt)) as [Hvalid|Hvalid].
+            { eapply (@parse_nonterminal_or_abort (length str, nonterminals_length initial_nonterminals_data));
+              first [ reflexivity | eassumption ]. }
+            { right; intro p.
+              clear -Hvalid p rdata.
+              abstract (
+                  inversion p; subst; try omega;
+                  repeat match goal with
+                           | [ H : is_true (is_valid_nonterminal initial_nonterminals_data (of_nonterminal _)) |- _ ]
+                             => apply initial_nonterminals_correct in H
+                           | [ |- is_valid_nonterminal initial_nonterminals_data (of_nonterminal _) = true ]
+                             => apply initial_nonterminals_correct
+                           | [ H : In (to_nonterminal _) (Valid_nonterminals ?G) |- _ ]
+                             => apply initial_nonterminals_correct' in H
+                           | [ H : context[of_nonterminal (to_nonterminal _)] |- _ ]
+                             => rewrite of_to_nonterminal in H by assumption
+                           | _ => congruence
+                           | [ H : _ = false |- _ ] => apply Bool.not_true_iff_false in H; apply H; clear H
+                         end
+                ). }
+          Defined.
+
+          Lemma parse_nonterminal'_eq
+                (str : String)
+                (nt : nonterminal_carrierT)
+          : (@parse_nonterminal' str nt)
+            = (BooleanRecognizer.parse_nonterminal' (G := G) str nt)
+                :> bool.
+          Proof.
+            expand_once.
+            destruct (Utils.dec (is_valid_nonterminal initial_nonterminals_data nt)) as [H|H].
+            { repeat eq_t'.
+              erewrite <- parse_nonterminal_or_abort_eq; reflexivity. }
+            { simpl.
+              unfold BooleanRecognizer.parse_nonterminal_or_abort.
+              rewrite Fix5_eq by (intros; apply parse_nonterminal_step_ext; assumption).
+              unfold BooleanRecognizer.parse_nonterminal_step at 1.
+              simpl.
+              rewrite H, Bool.andb_false_r; simpl.
+              edestruct lt_dec; try omega; simpl.
+              reflexivity. }
           Qed.
 
           Definition parse_nonterminal
                      (str : String)
                      (nt : String.string)
-          : dec _
-            := @parse_nonterminal_or_abort
-                 (length str, nonterminals_length initial_nonterminals_data)
-                 initial_nonterminals_data
-                 (reflexivity _)
-                 str (length str)
-                 (le_n _) eq_refl nt.
+          : dec (minimal_parse_of_nonterminal (G := G) (length str) initial_nonterminals_data str nt).
+          Proof.
+            destruct (parse_nonterminal' str (of_nonterminal nt)) as [p|p]; [ left | right ].
+            { clear -p rdata.
+              abstract (
+                  rewrite to_of_nonterminal in p; [ assumption | ];
+                  inversion p; subst; try omega;
+                  repeat match goal with
+                           | _ => assumption
+                           | [ H : is_true (is_valid_nonterminal initial_nonterminals_data (of_nonterminal _)) |- _ ]
+                             => apply initial_nonterminals_correct in H
+                           | [ |- is_valid_nonterminal initial_nonterminals_data (of_nonterminal _) = true ]
+                             => apply initial_nonterminals_correct
+                           | [ H : In (to_nonterminal _) (Valid_nonterminals ?G) |- _ ]
+                             => apply initial_nonterminals_correct' in H
+                           | [ H : context[of_nonterminal (to_nonterminal _)] |- _ ]
+                             => rewrite of_to_nonterminal in H by assumption
+                         end
+                ). }
+            { intro p'; apply p; clear p.
+              abstract (
+                  rewrite to_of_nonterminal; [ assumption | ];
+                  inversion p'; subst; try omega;
+                  repeat match goal with
+                           | _ => assumption
+                           | [ H : is_true (is_valid_nonterminal initial_nonterminals_data (of_nonterminal _)) |- _ ]
+                             => apply initial_nonterminals_correct in H
+                           | [ |- is_valid_nonterminal initial_nonterminals_data (of_nonterminal _) = true ]
+                             => apply initial_nonterminals_correct
+                           | [ H : In (to_nonterminal _) (Valid_nonterminals ?G) |- _ ]
+                             => apply initial_nonterminals_correct' in H
+                           | [ H : context[of_nonterminal (to_nonterminal _)] |- _ ]
+                             => rewrite of_to_nonterminal in H by assumption
+                         end
+                ). }
+          Defined.
 
           Lemma parse_nonterminal_eq
                 (str : String)
@@ -1180,7 +1237,9 @@ Print item_valid.
             = (BooleanRecognizer.parse_nonterminal (G := G) str nt)
                 :> bool.
           Proof.
-            apply parse_nonterminal_or_abort_eq.
+            expand_once.
+            repeat eq_t'.
+            rewrite parse_nonterminal'_eq; reflexivity.
           Qed.
         End wf.
       End nonterminals.
@@ -1191,7 +1250,7 @@ Print item_valid.
               (it : item Char).
 
       Definition parse_item : dec _
-        := parse_item' (parse_nonterminal str) it.
+        := parse_item' (fun nt _ => parse_nonterminal' str nt) it.
 
       Lemma parse_item_eq
       : parse_item

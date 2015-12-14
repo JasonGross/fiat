@@ -58,8 +58,7 @@ Section recursive_descent_parser.
   Context {Char} {HSL : StringLike Char} {HSLP : StringLikeProperties Char} (G : grammar Char).
   Context {data : @boolean_parser_dataT Char _}
           {cdata : @boolean_parser_completeness_dataT' Char _ G data}
-          {rdata : @parser_removal_dataT' _ G _}
-          {gvalid : grammar_valid G}.
+          {rdata : @parser_removal_dataT' _ G _}.
 
   Local Notation dec T := (T + (T -> False))%type (only parsing).
 
@@ -288,10 +287,21 @@ Section recursive_descent_parser.
                     => match f0 with
                          | ?f ?ae ?be ?ce ?de ?ee ?ge
                            => match LHS with
-                                | context L[f ?a ?b ?c ?d ?e ?g]
+                                | appcontext L[f ?a ?b ?c ?d ?e ?g]
                                   => unify a ae; unify b be; unify c ce; unify d de; unify e ee; unify g ge;
                                      let v := fresh in
                                      set (v := f a b c d e g);
+                                       let L' := context L[v] in
+                                       let R' := context R[bool_of_sum v] in
+                                       change (L' = R');
+                                         clearbody v; destruct v
+                              end
+                         | ?f ?ae ?be ?ce ?de ?ee
+                           => match LHS with
+                                | appcontext L[f ?a ?b ?c ?d ?e]
+                                  => unify a ae; unify b be; unify c ce; unify d de; unify e ee;
+                                     let v := fresh in
+                                     set (v := f a b c d e);
                                        let L' := context L[v] in
                                        let R' := context R[bool_of_sum v] in
                                        change (L' = R');
@@ -306,6 +316,8 @@ Section recursive_descent_parser.
                     => destruct it eqn:?
                   | _ => progress subst
                   | _ => progress simpl @bool_of_sum
+                  | context[fun x => ?f x]
+                    => change (fun x => f x) with f
                   | appcontext G[is_char ?x ?y]
                     => let H := fresh in
                        destruct (Utils.dec (is_char x y)) as [H|H];
@@ -400,29 +412,49 @@ Section recursive_descent_parser.
         end.
 
       Local Ltac eq_list_rect_fold_right_orb :=
-        idtac;
-        lazymatch goal with
-      | [ |- bool_of_sum (list_rect ?P ?N ?C ?ls ?k0 ?k1) = fold_right orb false (map ?f ?ls) ]
-        => let P' := fresh in
-           let N' := fresh in
-           let C' := fresh in
-           let f' := fresh in
-           set (P' := P);
-             set (N' := N);
-             set (C' := C);
-             set (f' := f);
-             refine (list_rect
-                       (fun ls' => forall k0' k1',
-                                     bool_of_sum (list_rect P' N' C' ls' k0' k1')
-                                     = fold_right orb false (map f' ls'))
-                       _
-                       _
-                       ls k0 k1);
-             simpl @list_rect; simpl @fold_right; intros;
-             [ subst P' f' N'
-             | unfold C' at 1, f' at 1 ];
-             cbv beta
-      end.
+        (idtac;
+         lazymatch goal with
+         | [ |- bool_of_sum (list_rect ?P ?N ?C ?ls ?k0 ?k1) = fold_right orb false (map ?f ?ls) ]
+           => (let P' := fresh in
+               let N' := fresh in
+               let C' := fresh in
+               let f' := fresh in
+               set (P' := P);
+               set (N' := N);
+               set (C' := C);
+               set (f' := f);
+               refine (list_rect
+                         (fun ls' => forall k0' k1',
+                                       bool_of_sum (list_rect P' N' C' ls' k0' k1')
+                                       = fold_right orb false (map f' ls'))
+                         _
+                         _
+                         ls k0 k1);
+               simpl @list_rect; simpl @fold_right; intros;
+               [ subst P' f' N'
+               | unfold C' at 1, f' at 1 ];
+               cbv beta)
+         | [ |- bool_of_sum (list_rect ?P ?N ?C ?ls ?k0) = fold_right orb false (map ?f ?ls) ]
+           => (let P' := fresh in
+               let N' := fresh in
+               let C' := fresh in
+               let f' := fresh in
+               set (P' := P);
+               set (N' := N);
+               set (C' := C);
+               set (f' := f);
+               refine (list_rect
+                         (fun ls' => forall k0',
+                                       bool_of_sum (list_rect P' N' C' ls' k0')
+                                       = fold_right orb false (map f' ls'))
+                         _
+                         _
+                         ls k0);
+               simpl @list_rect; simpl @fold_right; intros;
+               [ subst P' f' N'
+               | unfold C' at 1, f' at 1 ];
+               cbv beta)
+         end).
 
       Local Ltac t_item str_matches_nonterminal' :=
         unfold parse_item'; simpl;
@@ -468,26 +500,22 @@ Section recursive_descent_parser.
                  : nonterminal_carrierT -> bool)
                 (str_matches_nonterminal
                  : forall nt : nonterminal_carrierT,
-                     is_valid_nonterminal initial_nonterminals_data nt
-                     -> dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt)))
+                     dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt)))
                 (Hmatches
-                 : forall nt Hvalid, str_matches_nonterminal nt Hvalid = str_matches_nonterminal' nt :> bool)
-                (it : item Char)
-                (Hvalid : item_valid it).
+                 : forall nt, str_matches_nonterminal nt = str_matches_nonterminal' nt :> bool)
+                (it : item Char).
 
         Definition parse_item'
         : dec (minimal_parse_of_item (G := G) len0 valid str it).
         Proof.
-          refine (match it return item_valid it -> dec (minimal_parse_of_item len0 valid str it) with
-                    | Terminal ch => fun Hv
-                                     => if Sumbool.sumbool_of_bool (str ~= [ ch ])
-                                        then inl (MinParseTerminal _ _ _ _ _)
+          refine (match it return dec (minimal_parse_of_item len0 valid str it) with
+                    | Terminal ch => if Sumbool.sumbool_of_bool (str ~= [ ch ])
+                                     then inl (MinParseTerminal _ _ _ _ _)
+                                     else inr (fun _ => !)
+                    | NonTerminal nt => if str_matches_nonterminal (of_nonterminal nt)
+                                        then inl (MinParseNonTerminal _)
                                         else inr (fun _ => !)
-                    | NonTerminal nt => fun Hv
-                                        => if str_matches_nonterminal (of_nonterminal nt) _
-                                           then inl (MinParseNonTerminal _)
-                                           else inr (fun _ => !)
-                  end Hvalid);
+                  end);
           clear str_matches_nonterminal Hmatches;
           t_item str_matches_nonterminal'.
         Defined.
@@ -497,32 +525,11 @@ Section recursive_descent_parser.
         Proof. eq_t. Qed.
       End item.
 
-      Definition parse_item'_ext
-                 {len0 valid}
-                 (str : String)
-                 (str_matches_nonterminal str_matches_nonterminal'
-                  : forall nt : nonterminal_carrierT,
-                      is_valid_nonterminal initial_nonterminals_data nt
-                      -> dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt)))
-                 (ext : forall nt pf,
-                          str_matches_nonterminal nt pf = str_matches_nonterminal' nt pf)
-                (it : item Char)
-                (Hvalid Hvalid' : item_valid it)
-      : parse_item' str_matches_nonterminal it Hvalid
-        = parse_item' str_matches_nonterminal' it Hvalid'.
-      Proof.
-        expand_both_once; subst_valid_proof; destruct it; try reflexivity; [].
-        rewrite ext.
-        clear ext str_matches_nonterminal.
-        reflexivity.
-      Qed.
-
       Section production.
         Context {len0 valid}
                 (parse_nonterminal
                  : forall (str : String) (len : nat) (Hlen : length str = len) (pf : len <= len0) (nt : nonterminal_carrierT),
-                     is_valid_nonterminal initial_nonterminals_data nt
-                     -> dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt))).
+                     dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt))).
 
         Lemma dec_in_helper {ls it its str}
         : iffT {n0 : nat &
@@ -595,33 +602,31 @@ Section recursive_descent_parser.
                  (pf : len <= len0)
                  (prod : production Char)
                  (Hreachable : production_is_reachableT G prod)
-                 (Hvalid : production_valid prod)
         : dec (minimal_parse_of_production (G := G) len0 valid str prod).
         Proof.
-          revert prod Hvalid Hreachable str len Hlen pf.
+          revert prod Hreachable str len Hlen pf.
           refine
             (list_rect
                (fun prod =>
-                  forall (Hvalid : production_valid prod)
-                         (Hreachable : production_is_reachableT G prod)
+                  forall (Hreachable : production_is_reachableT G prod)
                          (str : String)
                          (len : nat)
                          (Hlen : length str = len)
                          (pf : len <= len0),
                     dec (minimal_parse_of_production (G := G) len0 valid str prod))
                ((** 0-length production, only accept empty *)
-                 fun Hvalid Hreachable str len Hlen pf
+                 fun Hreachable str len Hlen pf
                  => match Utils.dec (beq_nat len 0) with
                       | left H => inl _
                       | right H => inr (fun p => _)
                     end)
-               (fun it its parse_production' Hvalid Hreachable str len Hlen pf
+               (fun it its parse_production' Hreachable str len Hlen pf
                 => parse_production'_helper
                      _
                      (let parse_item := (fun n => parse_item' (parse_nonterminal (take n str) (len := min n len) (eq_trans take_length (f_equal (min _) Hlen)) _) it) in
-                      let parse_production := (fun n => parse_production' _ _ (drop n str) (len - n) (eq_trans (drop_length _ _) (f_equal (fun x => x - _) Hlen)) _) in
+                      let parse_production := (fun n => parse_production' _ (drop n str) (len - n) (eq_trans (drop_length _ _) (f_equal (fun x => x - _) Hlen)) _) in
                       match dec_In
-                              (fun n => dec_prod (parse_item n _) (parse_production n))
+                              (fun n => dec_prod (parse_item n) (parse_production n))
                               (splits it its str)
                       with
                         | inl p => inl (existT _ (projT1 p) (snd (projT2 p)))
@@ -685,8 +690,8 @@ Section recursive_descent_parser.
                     : forall (str : String) (len : nat) (pf : len <= len0) (nt : nonterminal_carrierT),
                         bool)
                    (parse_nonterminal_eq
-                    : forall str len Hlen pf nt Hvalid,
-                        @parse_nonterminal str len Hlen pf nt Hvalid = parse_nonterminal' str len pf nt :> bool)
+                    : forall str len Hlen pf nt,
+                        @parse_nonterminal str len Hlen pf nt = parse_nonterminal' str len pf nt :> bool)
                    (splits : item Char -> production Char -> String -> list nat)
                    (Hsplits : forall str it its Hreachable pf', split_list_completeT_for (len0 := len0) (G := G) (valid := valid) it its str pf' (splits it its str))
                    (str : String)
@@ -695,14 +700,13 @@ Section recursive_descent_parser.
                    (pf pf' : len <= len0)
                    (prod : production Char)
                    (Hreachable : production_is_reachableT G prod)
-                   (Hvalid : production_valid prod)
-        : parse_production'_for splits Hsplits str Hlen pf Hreachable Hvalid = BooleanRecognizer.parse_production'_for parse_nonterminal' splits str pf' prod :> bool.
+        : parse_production'_for splits Hsplits str Hlen pf Hreachable = BooleanRecognizer.parse_production'_for parse_nonterminal' splits str pf' prod :> bool.
         Proof.
           eq_t; eq_list_rect; repeat eq_t'; [].
           expand_onceL; repeat eq_t'; [].
           expand_onceL; eq_list_rect_fold_left_orb; repeat eq_t'; [].
           erewrite <- parse_item'_eq; [ | intros; apply parse_nonterminal_eq ]; [].
-          repeat eq_t'; simpl; repeat eq_t'.
+          repeat eq_t'; simpl; repeat eq_t'; [].
           match goal with H : _ |- _ => erewrite <- H; repeat eq_t' end.
         Qed.
 
@@ -737,25 +741,23 @@ Section recursive_descent_parser.
                  (pf : len <= len0)
                  (prod : production Char)
                  (Hreachable : production_is_reachableT G prod)
-                 (Hvalid : production_valid prod)
         : dec (minimal_parse_of_production (G := G) len0 valid str prod)
-          := parse_production'_for split_string_for_production (fun str it its Hreachable pf' => split_list_completeT_production_is_reachable split_string_for_production_complete Hreachable) str Hlen pf Hreachable Hvalid.
+          := parse_production'_for split_string_for_production (fun str it its Hreachable pf' => split_list_completeT_production_is_reachable split_string_for_production_complete Hreachable) str Hlen pf Hreachable.
 
         Definition parse_production'_eq
                    (parse_nonterminal'
                     : forall (str : String) (len : nat) (pf : len <= len0) (nt : nonterminal_carrierT),
                         bool)
                    (parse_nonterminal_eq
-                    : forall str len Hlen pf nt Hvalid,
-                        @parse_nonterminal str len Hlen pf nt Hvalid = parse_nonterminal' str len pf nt :> bool)
+                    : forall str len Hlen pf nt,
+                        @parse_nonterminal str len Hlen pf nt = parse_nonterminal' str len pf nt :> bool)
                    (str : String)
                    (len : nat)
                    (Hlen : length str = len)
                    (pf pf' : len <= len0)
                    (prod : production Char)
                    (Hreachable : production_is_reachableT G prod)
-                   (Hvalid : production_valid prod)
-        : parse_production' str Hlen pf Hreachable Hvalid = BooleanRecognizer.parse_production' parse_nonterminal' str pf' prod :> bool.
+        : parse_production' str Hlen pf Hreachable = BooleanRecognizer.parse_production' parse_nonterminal' str pf' prod :> bool.
         Proof.
           apply parse_production'_for_eq; assumption.
         Qed.
@@ -773,17 +775,15 @@ Section recursive_descent_parser.
                           (len : nat)
                           (Hlen : length str = len)
                           (pf : len <= len0)
-                          (nt : nonterminal_carrierT)
-                          (Hvalid : is_valid_nonterminal initial_nonterminals_data nt),
+                          (nt : nonterminal_carrierT),
                      dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt)))
                 (Hmatches
                  : forall (str : String)
                           (len : nat)
                           (Hlen : length str = len)
                           (pf : len <= len0)
-                          (nt : nonterminal_carrierT)
-                          (Hvalid : is_valid_nonterminal initial_nonterminals_data nt),
-                     parse_nonterminal str len Hlen pf nt Hvalid = parse_nonterminal' str len pf nt :> bool)
+                          (nt : nonterminal_carrierT),
+                     parse_nonterminal str len Hlen pf nt = parse_nonterminal' str len pf nt :> bool)
                 (str : String)
                 (len : nat).
 
@@ -838,21 +838,19 @@ Section recursive_descent_parser.
                    (pf : len <= len0)
                    (prods : productions Char)
                    (Hreachable : productions_is_reachable prods)
-                   (Hvalid : productions_valid prods)
         : dec (minimal_parse_of (G := G) len0 valid str prods).
         Proof.
-          revert prods Hvalid Hreachable.
+          revert prods Hreachable.
           refine (list_rect
                     (fun prods
-                     => productions_valid prods
-                        -> productions_is_reachable prods
+                     => productions_is_reachable prods
                         -> dec (minimal_parse_of (G := G) len0 valid str prods))
-                    (fun _ _ => inr (fun p => _))
-                    (fun p ps IHps Hvalid Hreachable
-                     => match parse_production' parse_nonterminal str Hlen pf _ _ with
+                    (fun _ => inr (fun p => _))
+                    (fun p ps IHps Hreachable
+                     => match parse_production' parse_nonterminal str Hlen pf _ with
                           | inl H => inl (MinParseHead _ _)
                           | inr H
-                            => match IHps _ _ with
+                            => match IHps _ with
                                  | inl H' => inl (MinParseTail _ _)
                                  | inr H' => inr (fun p' => _)
                                end
@@ -865,8 +863,7 @@ Section recursive_descent_parser.
               (pf pf' : len <= len0)
               (prods : productions Char)
               (Hreachable : productions_is_reachable prods)
-              (Hvalid : productions_valid prods)
-        : (@parse_productions' Hlen pf prods Hreachable Hvalid)
+        : (@parse_productions' Hlen pf prods Hreachable)
           = (BooleanRecognizer.parse_productions' parse_nonterminal' str pf' prods)
               :> bool.
         Proof.
@@ -897,8 +894,7 @@ Section recursive_descent_parser.
                             (str : String) (len : nat)
                             (Hlen : length str = len)
                             (pf : len <= fst p)
-                            (nt : nonterminal_carrierT)
-                            (Hvalid : is_valid_nonterminal initial_nonterminals_data nt),
+                            (nt : nonterminal_carrierT),
                        dec (minimal_parse_of_nonterminal (G := G) (fst p) valid str (to_nonterminal nt)))
                   (Hmatches
                    : forall (p : nat * nat)
@@ -909,22 +905,20 @@ Section recursive_descent_parser.
                             (str : String) (len : nat)
                             (Hlen : length str = len)
                             (pf : len <= fst p)
-                            (nt : nonterminal_carrierT)
-                            (Hvalid : is_valid_nonterminal initial_nonterminals_data nt),
-                       (@parse_nonterminal p pR valid Hvalid_len str len Hlen pf nt Hvalid)
+                            (nt : nonterminal_carrierT),
+                       (@parse_nonterminal p pR valid Hvalid_len str len Hlen pf nt)
                        = (@parse_nonterminal' p pR valid str len pf nt)
                            :> bool).
 
           Definition parse_nonterminal_step
                      (valid : nonterminals_listT)
-                     (Hvalid_len : nonterminals_length valid <= valid_len)
+                     (is_valid_len : nonterminals_length valid <= valid_len)
                      (*Hvalid : sub_nonterminals_listT valid initial_nonterminals_data*)
                      (str : String)
                      (len : nat)
                      (Hlen : length str = len)
                      (pf : len <= len0)
                      (nt : nonterminal_carrierT)
-                     (Hvalid : is_valid_nonterminal initial_nonterminals_data nt)
           : dec (minimal_parse_of_nonterminal (G := G) len0 valid str (to_nonterminal nt)).
           Proof.
             refine (sumbool_rect (fun _ => _) (fun pf' => _) (fun pf' => _) (lt_dec len len0));
@@ -944,7 +938,6 @@ Section recursive_descent_parser.
                           (Lookup G (to_nonterminal nt)))
               as [mp|nmp];
               [ eexists _, nil; simpl; split; [ | reflexivity ]
-              |
               | left; apply MinParseNonTerminalStrLt
               | right; intro mp ]
             | ((** [str] didn't get smaller, so we cache the fact that we've hit this nonterminal already *)
@@ -965,7 +958,7 @@ Section recursive_descent_parser.
                                     pf'''
                                     (*transitivity
                                        ((_ : Proper (sub_nonterminals_listT ==> eq ==> sub_nonterminals_listT) remove_nonterminal)
-                                          _ _ Hvalid _ _ eq_refl)
+                                          _ _ _ _ eq_refl)
                                        (sub_nonterminals_listT_remove _ _)*))
                                  str len
                                  Hlen
@@ -975,7 +968,6 @@ Section recursive_descent_parser.
                   [
                   |
                   | eexists _, nil; simpl; split; [ | reflexivity ]
-                  |
                   | left; apply MinParseNonTerminalStrEq
                   | right; intro mp ])
               | ((** oops, we already saw this nonterminal in the past.  ABORT! *)
@@ -983,7 +975,7 @@ Section recursive_descent_parser.
                 right; intro mp) ])
             ];
             try solve [ clear -Hlen pf'; abstract (subst; assumption)
-                      | clear -mp Hvalid rdata;
+                      | clear -mp rdata;
                         abstract (rewrite of_to_nonterminal by (first [ assumption | apply initial_nonterminals_correct'; assumption ]); assumption)
                       | idtac;
                         match goal with
@@ -992,7 +984,7 @@ Section recursive_descent_parser.
                           | [ |- is_true (is_valid_nonterminal initial_nonterminals_data (of_nonterminal (to_nonterminal _))) ]
                             => apply initial_nonterminals_correct, initial_nonterminals_correct'; assumption
                         end
-                      | clear -pf' Hvalid rdata;
+                      | clear -pf' rdata;
                         abstract (destruct_head or; repeat subst; rewrite ?of_to_nonterminal by (first [ assumption | apply initial_nonterminals_correct'; assumption ]); first [ assumption | omega | apply initial_nonterminals_correct'; assumption ])
                       | clear -mp Hlen;
                         abstract (
@@ -1027,7 +1019,7 @@ Section recursive_descent_parser.
                                     omega ]
                           ) ].
             { simpl.
-              clear -is_valid Hvalid_len rdata.
+              clear -is_valid_len rdata.
                abstract (
                   repeat match goal with
                            | [ H : andb _ _ = true |- _ ] => apply Bool.andb_true_iff in H
@@ -1043,7 +1035,7 @@ Section recursive_descent_parser.
               generalize dependent (length str).
               clear -pf pf'; intros.
               abstract omega. }
-            { clear -is_valid Hvalid rdata;
+            { clear -is_valid rdata;
               abstract (
                   repeat match goal with
                            | [ H : andb _ _ = true |- _ ] => apply Bool.andb_true_iff in H
@@ -1052,7 +1044,7 @@ Section recursive_descent_parser.
                            | _ => rewrite of_to_nonterminal by (first [ assumption | apply initial_nonterminals_correct'; assumption ])
                          end
                 ). }
-            { clear -mp nmp Hlen pf pf' rdata Hvalid HSLP.
+            { clear -mp nmp Hlen pf pf' rdata HSLP.
               apply nmp; clear nmp;
                abstract (
                   inversion mp; subst;
@@ -1062,7 +1054,7 @@ Section recursive_descent_parser.
                            | _ => solve [ exfalso; eauto with nocore ]
                          end
                 ). }
-            { clear -mp is_valid Hlen pf' rdata Hvalid_len.
+            { clear -mp is_valid Hlen pf' rdata_len.
               abstract (
                   inversion mp; clear mp; subst;
                   [ auto with nocore
@@ -1098,7 +1090,7 @@ Section recursive_descent_parser.
                      (pf pf' : len <= len0)
                      (nt : nonterminal_carrierT)
                      (Hvalid : is_valid_nonterminal initial_nonterminals_data nt)
-          : (@parse_nonterminal_step valid Hvalid_len str len Hlen pf nt Hvalid)
+          : (@parse_nonterminal_step valid_len str len Hlen pf nt)
             = (BooleanRecognizer.parse_nonterminal_step (G := G) parse_nonterminal' valid str pf' nt)
                 :> bool.
           Proof.
@@ -1138,12 +1130,12 @@ Section recursive_descent_parser.
                 (pf : len <= fst p)
                 (nt : nonterminal_carrierT)
                 (Hvalid : is_valid_nonterminal initial_nonterminals_data nt)
-          : (@parse_nonterminal_or_abort p valid Hvalid_len str len Hlen pf nt Hvalid)
+          : (@parse_nonterminal_or_abort p valid_len str len Hlen pf nt)
             = (BooleanRecognizer.parse_nonterminal_or_abort (G := G) p valid str pf nt)
                 :> bool.
           Proof.
             expand_once.
-            revert valid Hvalid_len str len Hlen pf nt Hvalid.
+            revert valid_len str len Hlen pf nt.
             match goal with
               | [ |- appcontext[Fix ?Wf _ _ ?p] ]
                 => induction (Wf p) as [?? IH]; intros

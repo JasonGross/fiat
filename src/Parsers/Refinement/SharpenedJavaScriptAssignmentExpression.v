@@ -31,33 +31,137 @@ Section IndexedImpl.
     {
       Reset Ltac Profile.
       Time simplify parser splitter.
+      Typeclasses eauto := debug.
+      Time pose (string_stringlike_properties : @StringLikeProperties ascii string_stringlikemin string_stringlike). (* 0.024 *)
+      Undo.
+      Time pose (ltac:(exact string_stringlike_properties) : @StringLikeProperties ascii string_stringlikemin string_stringlike).
+      Undo.
+      Time pose (ltac:(typeclasses eauto) : @StringLikeProperties ascii string_stringlikemin string_stringlike).
+      Undo.
+      (*** HERE *)
+      Time pose (_ : @StringLikeProperties ascii string_stringlikemin string_stringlike). (* 1.232 *)
+      Time pose (ltac:(typeclasses eauto) : @StringLikeProperties ascii string_stringlikemin string_stringlike).
       Show Ltac Profile.
       { Time refine_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_rev_search_for. }
-      { Time rewrite_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { (*idtac;
+          let lem := fresh "lem" in
+          pose_disjoint_search_for lem.
+        Import PossibleTerminalsSets.
+
+          idtac;
+  let G := (lazymatch goal with
+             | [ |- context[ParserInterface.split_list_is_complete_idx ?G ?str ?offset ?len ?idx] ]
+               => G
+             end) in
+  match goal with
+  | [ |- context[ParserInterface.split_list_is_complete_idx G ?str ?offset ?len ?idx] ]
+    => pose proof (lem idx) as lem';
+       do 2 (lazymatch type of lem' with
+              | forall a : ?T, _ => idtac; let x := fresh in evar (x : T); specialize (lem' x); subst x
+              end);
+       let T := match type of lem' with forall a : ?T, _ => T end in
+       let H' := fresh in
+       assert (H' : T) by solve [ solve_disjoint_side_conditions ];
+       specialize (lem' H'); clear H' end. (*
+       cbv beta delta [id
+                         all_possible_ascii_of_nt all_possible_ascii_of_production
+                         possible_first_ascii_of_nt possible_first_ascii_of_production
+                         possible_last_ascii_of_nt possible_last_ascii_of_production] in lem';
+       do 2 (let x := match type of lem' with
+                      | context[characters_set_to_ascii_list ?ls]
+                        => constr:(characters_set_to_ascii_list ls)
+                      end in
+             replace_with_vm_compute_in x lem')
+
+  end. *)
+cbv beta iota in *.
+  Set Printing Coercions.
+  cbv [rproduction_of_string] in *.
+  cbv [interp_ritem] in *.
+  cbv [interp_RCharExpr] in *.
+  cbv [irbeq] in *.
+  cbv [pregrammar_idata] in *.
+  cbn [javascript_assignment_expression_pregrammar] in *.
+  pose (all_possible_ascii_of_nt
+          (pregrammar'_of_pregrammar
+             javascript_assignment_expression_pregrammar)
+          "Expression initial,noIn") as k.
+  vm_compute in k. *)
+        Time refine_disjoint_search_for_with_alt ltac:(fun _ => shelve). } }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time exfalso; admit; refine_disjoint_search_for_leaving_side_conditions. }
+    { Time refine_disjoint_search_for. }
+    { (** Refinement rules for disjoint rules *)
+Require Import Coq.omega.Omega.
+Require Import Fiat.Parsers.Refinement.PreTactics.
+Require Import Fiat.Computation.Refinements.General.
+Require Import Fiat.Parsers.StringLike.Properties.
+Require Import Fiat.Parsers.StringLike.FirstChar.
+Require Import Fiat.Common.Equality.
+Require Import Fiat.Common.List.Operations.
+Require Import Fiat.Parsers.ContextFreeGrammar.ValidReflective.
+Require Import Fiat.Parsers.Refinement.DisjointLemmas.
+Require Import Fiat.Parsers.Refinement.DisjointRulesCommon.
+Require Import Fiat.Parsers.Refinement.PossibleTerminalsSets.
+Require Import Fiat.Parsers.ParserInterface.
+Require Import Fiat.Parsers.StringLike.Core.
+Require Import Fiat.Common.List.DisjointFacts.
+Export DisjointLemmas.Exports.
+Typeclasses eauto := debug.
+Time pose (_ : StringLikeProperties ascii).
+(*** HERE *)
+ Time idtac;
+        let G := match goal with |- context[ParserInterface.split_list_is_complete_idx ?G ?str ?offset ?len ?idx] => G end in
+        let HSLM := match goal with |- context[@ParserInterface.split_list_is_complete_idx ?Char ?G ?HSLM ?HSL] => HSLM end in
+        let HSL := match goal with |- context[@ParserInterface.split_list_is_complete_idx ?Char ?G ?HSLM ?HSL] => HSL end in
+        let apdata := get_hyp_of_shape (all_possible_data G) in
+        idtac;
+          let pdata := get_hyp_of_shape (possible_data G) in
+  let lem' := constr:(@refine_disjoint_search_for_idx HSLM HSL _ G apdata pdata) in
+pose lem'.
+
+  let lem' := match goal with
+              | [ |- context[ParserInterface.split_list_is_complete_idx ?G ?str ?offset ?len ?idx] ]
+                => constr:(fun idx' nt its => lem' str offset len nt its idx')
+              end in
+  pose proof lem' as lem.
+  pose_disjoint_search_for lem.
+ Time refine_disjoint_search_for. }
+    Time all:try refine_disjoint_search_for.
+    }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_disjoint_search_for. }
+    { Time refine_binop_table. }
+      { Time refine_disjoint_search_for. }
       { Time refine_binop_table. }
-      { Time rewrite_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_rev_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
       { Time refine_binop_table. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_rev_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
       { Time refine_binop_table. }
-      { Time rewrite_disjoint_search_for. }
-      { Time refine_binop_table. }
-      { Time rewrite_disjoint_search_for. }
-      { Time rewrite_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
+      { Time refine_disjoint_search_for. }
 
       simplify parser splitter.
       Show Ltac Profile.

@@ -22,6 +22,121 @@ Section IndexedImpl.
     Time start sharpening ADT.
 
     Reset Ltac Profile.
+    eapply SharpenStep;
+      [ solve [ apply FirstStep ] | ];
+      unfold opt_rindexed_spec.
+  (*
+  let p' := fresh "p'" in
+  match goal with
+  | [ |- context[pregrammar_productions ?G] ]
+    => let p := constr:(pregrammar_productions G) in
+       set (p' := p);
+       hnf in p'
+  end; *)
+    Time Timeout 5 lazymatch goal with
+    | [ |- context[opt2.fold_right _ _ ?ls] ]
+      => replace_with_vm_compute_by_set ls
+    end.
+    Print Ltac start_honing.
+    Require Import DisjointLemmas PossibleTerminalsSets.
+Require Import Coq.MSets.MSetPositive.
+Require Import Coq.Classes.Morphisms.
+Require Import Fiat.Parsers.StringLike.FirstChar Fiat.Parsers.StringLike.LastChar Fiat.Parsers.StringLike.ForallChars.
+Require Import Fiat.Parsers.ContextFreeGrammar.Core.
+Require Import Fiat.Parsers.ContextFreeGrammar.PreNotations.
+Require Import Fiat.Parsers.ContextFreeGrammar.Precompute.
+Require Import Fiat.Parsers.StringLike.Properties.
+Require Import Fiat.Parsers.Splitters.RDPList.
+Require Import Fiat.Parsers.BaseTypes.
+Require Import Fiat.Parsers.ContextFreeGrammar.Fix.FromAbstractInterpretationDefinitions.
+Require Import Fiat.Parsers.ContextFreeGrammar.Fix.Fix.
+Require Import Fiat.Parsers.ContextFreeGrammar.Fix.AsciiLattice.
+Require Import Fiat.Parsers.ContextFreeGrammar.Fix.ProdAbstractInterpretationDefinitions.
+Require Import Fiat.Parsers.ContextFreeGrammar.Fix.FromAbstractInterpretation.
+Require Import Fiat.Parsers.Refinement.EmptyLemmas.
+Require Import Fiat.Common.BoolFacts.
+Require Import Fiat.Common.LogicFacts.
+Require Import Fiat.Common.NatFacts.
+Require Import Fiat.Common.
+
+    Notation tree := (PositiveSet.Node _ _ _).
+    Notation ls := (cons _ _).
+    Definition hide {T} {v : T} := v.
+    Notation TREE := (FMapPositive.PositiveMap.tree _).
+    Time let G := get_grammar in
+    lazymatch goal with
+    | [ |- context[@ParserInterface.split_list_is_complete_idx _ G ?HSLM ?HSL] ]
+      => pose (_ : @StringLikeProperties _ HSLM HSL)
+    end;
+      lazymatch goal with
+      | [ H : possible_data G |- _ ] => idtac
+      | _ => let Hpossible_data := fresh "Hpossible_terminals_data" in
+             let v := constr:(@fold_grammar _ _ _ possible_terminals_aidata G) in
+             let lem := lazymatch v with
+                        | @fold_grammar ?Char ?T ?fpdata ?aidata ?G
+                          => constr:(@Build_fold_grammar_data' Char T fpdata aidata G)
+                        end in
+             pose (@hide _ lem) as Hlem;
+               let compiled_ps := lazymatch v with
+                                  | @fold_grammar ?Char ?T ?fpdata ?aidata ?G
+                                    => constr:(@opt.compile_grammar _ _ (@compile_item_data_of_abstract_interpretation _ _ fpdata aidata G) G)
+                                  end in
+               let compiled_ps' := (eval vm_compute in compiled_ps) in
+               pose (@hide _ compiled_ps') as Hcompiled_ps;
+                 let v := constr:(v compiled_ps') in
+                 (*let v' := (eval vm_compute in v) in*)
+                 pose v as Hv
+      end;
+      exfalso.
+    Time let fold_grammar_type := lazymatch type of Hlem with
+                                  | forall cp Hcp (fg : @?FG cp), _ => FG
+                                  end in
+         let compiled_ps' := (eval vm_compute in Hcompiled_ps) in
+         let lem := (eval cbv [Hlem hide] in Hlem) in
+         let v' := (eval vm_compute in Hv) in
+         pose v'.
+    Set Silent.
+    Unset Silent.
+    Show. (*
+         let k := constr:(lem compiled_ps' ltac:(vm_cast_no_check (eq_refl compiled_ps')) (v' <: fold_grammar_type compiled_ps') ltac:(vm_cast_no_check (eq_refl v'))) in
+         idtac.
+    Notation prevmcomputed_search_data
+      := {| fgd_fold_grammar := _ |}.
+    pose (Hlem _ eq_refl _ eq_refl) as Hlemv.
+    Time vm_compute in Hlemv.
+    let T := type of Hv in
+    pose T as HT.
+    change HT in (type of Hv).
+    Time vm_compute in HT.
+    subst HT.
+    pose (FMapPositive.PositiveMap.cardinal Hv) as l.
+
+    Time vm_compute in l.
+    pose (List.length Hv) as l.
+    Time vm_compute in Hv.
+    Set Silent.
+    Unset Silent.
+    cbv [fold_grammar] in Hv.
+    Unset Silent.
+    cbv [pre_Fix_grammar] in Hv.
+    cbv [pre_Fix_grammar_helper] in Hv.
+    cbv [aggregate_state fixedpoint_by_abstract_interpretation] in Hv.
+    Time vm_compute in
+
+    set (HT := T) in Hv.
+    Set Silent.
+  constr:((@hide _ lem, @hide _ compiled_ps', @hide _ v'))(*
+  let k := constr:(lem compiled_ps' ltac:(vm_cast_no_check (eq_refl compiled_ps')) v' (*ltac:(vm_cast_no_check (eq_refl v'))*))*) in
+  v (*
+  constr:(lem compiled_ps' ltac:(vm_cast_no_check (eq_refl compiled_ps')) v' ltac:(vm_cast_no_check (eq_refl v'))) in
+                        constr:(v : possible_data G)*) in
+             pose val as Hpossible_data(*;
+               cbv beta in Hpossible_data*)
+      end.
+    exfalso.
+    rename Hpossible_terminals_data into v; clear -v.
+    Time vm_compute in v.
+
     Time start honing parser using indexed representation.
     Show Ltac Profile.
 
@@ -207,5 +322,6 @@ Definition str400 := "ababababababababababababababababababababababababababababab
 Definition test2 := json_parser (str400 ++ str400 ++ str400 ++ str400).
 
 Recursive Extraction test0 test1 test2.
+*)
 *)
 *)
